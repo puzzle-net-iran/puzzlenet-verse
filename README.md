@@ -5,7 +5,7 @@
 > An isometric 3D interactive world built with pure Canvas — no frameworks, no dependencies.
 
 ## 🌐 Live Demo
-**[puzzlenet.github.io/puzzlenet-verse](https://puzzlenet.github.io/puzzlenet-verse)**
+**[puzzlenet.github.io/puzzlenet-verse](https://puzzle-net-iran.github.io/puzzlenet-verse)**
 
 ---
 
