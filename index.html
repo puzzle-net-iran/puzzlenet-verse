@@ -1,76 +1,622 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>پازل‌نت ورس — PuzzleNet Verse</title>
-  <meta name="description" content="دنیای تعاملی سه‌بعدی گروه فنی پازل‌نت — کاوش در ۳۲ اتاق خدمات دیجیتال" />
-  <meta property="og:title" content="PuzzleNet Verse" />
-  <meta property="og:description" content="Interactive isometric world by PuzzleNet Technical Group" />
-  <link rel="stylesheet" href="css/style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>پازل‌نت ورس — PuzzleNet Verse</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#03080f;overflow:hidden;font-family:'Vazirmatn',sans-serif;color:#c8e8f8}
+#world{display:block;cursor:grab;touch-action:none}
+#world:active{cursor:grabbing}
+#hud{position:fixed;top:0;left:0;right:0;height:50px;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:linear-gradient(to bottom,rgba(3,8,15,0.95),transparent);border-bottom:1px solid rgba(0,212,255,0.08)}
+.hud-logo{font-family:'Share Tech Mono',monospace;font-size:15px;letter-spacing:3px;color:#00d4ff;text-shadow:0 0 15px #00d4ff}
+.hud-logo span{color:#ff6b35}
+.hud-pill{font-size:12px;color:#00d4ff;background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18);border-radius:20px;padding:4px 16px;font-family:'Share Tech Mono',monospace}
+.hud-stat{font-size:11px;font-family:'Share Tech Mono',monospace;color:rgba(0,212,255,0.5);background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);padding:3px 10px;border-radius:4px}
+.hud-right{display:flex;gap:10px;align-items:center}
+#hint{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:14px;z-index:100;animation:fadeOut 7s ease 3s forwards}
+@keyframes fadeOut{0%{opacity:1}100%{opacity:0;pointer-events:none}}
+#hint span{font-size:11px;font-family:'Share Tech Mono',monospace;color:rgba(0,212,255,0.45);background:rgba(0,0,0,0.5);padding:4px 10px;border-radius:20px;border:1px solid rgba(0,212,255,0.1)}
+#panel{position:fixed;left:20px;top:58px;width:260px;z-index:200;background:rgba(5,14,28,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:20px;transform:translateX(-120%);transition:transform 0.35s cubic-bezier(.23,1,.32,1);backdrop-filter:blur(12px)}
+#panel.open{transform:translateX(0)}
+#pclose{position:absolute;top:10px;right:12px;background:none;border:none;color:rgba(0,212,255,0.4);font-size:16px;cursor:pointer}
+#pclose:hover{color:#00d4ff}
+.pi{font-size:36px;text-align:center;margin-bottom:8px}
+.pn{font-size:16px;font-weight:800;color:#00d4ff;text-align:center;margin-bottom:3px}
+.ps{font-size:10px;color:#ff6b35;text-align:center;margin-bottom:10px;font-family:'Share Tech Mono',monospace;letter-spacing:2px}
+.pd{font-size:12px;line-height:1.8;color:rgba(200,232,248,0.8);border-top:1px solid rgba(0,212,255,0.12);padding-top:10px;margin-bottom:12px}
+.pl{display:block;text-align:center;font-size:12px;color:#00d4ff;text-decoration:none;font-family:'Share Tech Mono',monospace;border:1px solid rgba(0,212,255,0.2);padding:6px;border-radius:6px}
+.pl:hover{background:rgba(0,212,255,0.1)}
+#mmwrap{position:fixed;bottom:16px;right:16px;z-index:100;background:rgba(3,8,15,0.85);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:6px 8px}
+.mmlabel{font-size:9px;font-family:'Share Tech Mono',monospace;color:rgba(0,212,255,0.3);text-align:center;letter-spacing:2px;margin-bottom:4px}
+#tooltip{position:fixed;pointer-events:none;z-index:300;background:rgba(3,8,15,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:7px 13px;font-size:12px;font-family:'Share Tech Mono',monospace;color:#00d4ff;display:none;white-space:nowrap}
+#boot{position:fixed;inset:0;z-index:1000;background:#03080f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity 0.8s}
+#boot.hidden{opacity:0;pointer-events:none}
+.blogo{font-family:'Share Tech Mono',monospace;font-size:26px;letter-spacing:6px;color:#00d4ff;text-shadow:0 0 30px #00d4ff}
+.bsub{font-size:12px;color:rgba(0,212,255,0.4);letter-spacing:3px}
+.bbarw{width:260px;height:3px;background:rgba(0,212,255,0.1);border-radius:2px;overflow:hidden}
+.bbar{height:100%;width:0;background:linear-gradient(90deg,#00d4ff,#8b5cf6);transition:width 0.15s linear;box-shadow:0 0 10px #00d4ff}
+.bstat{font-size:11px;font-family:'Share Tech Mono',monospace;color:rgba(0,212,255,0.35);letter-spacing:2px}
+</style>
 </head>
 <body>
 
-<!-- ── BOOT SCREEN ─────────────────────────────────────── -->
 <div id="boot">
-  <div class="boot-logo">
-    <svg width="80" height="80" viewBox="0 0 80 80">
-      <!-- Puzzle piece SVG logo -->
-      <path d="M10 10 h22 v8 a6 6 0 0 1 0 12 v8 h-22 v-8 a6 6 0 0 0 0-12 z" fill="none" stroke="#00d4ff" stroke-width="2"/>
-      <path d="M38 10 h22 v8 a6 6 0 0 1 0 12 v8 h-8 a6 6 0 0 0-12 0 h-2z" fill="none" stroke="#ff6b35" stroke-width="2"/>
-      <path d="M10 46 h8 a6 6 0 0 1 12 0 h2 v22 h-22 z" fill="none" stroke="#00ff88" stroke-width="2"/>
-      <path d="M38 46 h22 v22 h-8 a6 6 0 0 0-12 0 h-2 z" fill="none" stroke="#8b5cf6" stroke-width="2"/>
-    </svg>
-    <div class="boot-title">PUZZLENET VERSE</div>
-    <div class="boot-sub">گروه فنی پازل‌نت</div>
-  </div>
-  <div class="boot-bar-wrap"><div class="boot-bar" id="bootBar"></div></div>
-  <div class="boot-status" id="bootStatus">در حال بارگذاری دنیا...</div>
+  <div class="blogo">PUZZLENET VERSE</div>
+  <div class="bsub">گروه فنی پازل‌نت</div>
+  <div class="bbarw"><div class="bbar" id="bbar"></div></div>
+  <div class="bstat" id="bstat">اتصال به سرور...</div>
 </div>
 
-<!-- ── HUD ─────────────────────────────────────────────── -->
 <div id="hud">
   <div class="hud-logo">PUZZLE<span>NET</span> VERSE</div>
-  <div class="hud-center">
-    <div class="hud-pill" id="roomLabel">خوش آمدید به پازل‌نت ورس</div>
-  </div>
+  <div class="hud-pill" id="roomLabel">خوش آمدید به پازل‌نت ورس</div>
   <div class="hud-right">
-    <div class="hud-stat" id="coordsEl">۰ , ۰</div>
-    <div class="hud-stat" id="zoomEl">زوم: ۱×</div>
+    <div class="hud-stat" id="cEl">۰ , ۰</div>
+    <div class="hud-stat" id="zEl">زوم: ۱×</div>
   </div>
 </div>
 
-<!-- ── CONTROLS HINT ───────────────────────────────────── -->
-<div id="controls">
-  <span>🖱 درگ</span><span>🔍 اسکرول</span><span>⌨ WASD</span><span>R بازنشانی</span>
+<div id="hint">
+  <span>🖱 درگ کن</span><span>🔍 اسکرول</span><span>🖱 کلیک برای اطلاعات</span><span>R بازنشانی</span>
 </div>
 
-<!-- ── ROOM INFO PANEL ─────────────────────────────────── -->
-<div id="infoPanel">
-  <button id="infoPanelClose">✕</button>
-  <div class="ip-icon" id="ipIcon">🌐</div>
-  <div class="ip-name" id="ipName">نام اتاق</div>
-  <div class="ip-service" id="ipService">خدمت</div>
-  <div class="ip-desc" id="ipDesc">توضیحات</div>
-  <a class="ip-link" id="ipLink" href="#" target="_blank">بیشتر بدانید ←</a>
+<div id="panel">
+  <button id="pclose">✕</button>
+  <div class="pi" id="pi">🌐</div>
+  <div class="pn" id="pn">نام اتاق</div>
+  <div class="ps" id="ps">SERVICE</div>
+  <div class="pd" id="pd">توضیحات</div>
+  <a class="pl" id="pl" href="#" target="_blank">بیشتر بدانید ←</a>
 </div>
 
-<!-- ── MINIMAP ─────────────────────────────────────────── -->
-<div id="minimapWrap">
-  <div class="mm-label">نقشه کوچک</div>
-  <canvas id="minimap" width="200" height="160"></canvas>
+<div id="mmwrap">
+  <div class="mmlabel">نقشه کوچک</div>
+  <canvas id="mm" width="180" height="140"></canvas>
 </div>
 
-<!-- ── MAIN CANVAS ────────────────────────────────────── -->
+<div id="tooltip"></div>
 <canvas id="world"></canvas>
 
-<!-- ── TOOLTIP ────────────────────────────────────────── -->
-<div id="tooltip"></div>
+<script>
+// ══════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════
+function shade(hex,p){
+  hex=hex.replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  const n=parseInt(hex,16);
+  const r=Math.max(0,Math.min(255,((n>>16)&255)+p));
+  const g=Math.max(0,Math.min(255,((n>>8)&255)+p));
+  const b=Math.max(0,Math.min(255,(n&255)+p));
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 
-<script src="js/rooms.js"></script>
-<script src="js/renderer.js"></script>
-<script src="js/world.js"></script>
+// ══════════════════════════════════════════════════════
+// ROOMS DATA — 8 rooms for demo (expandable to 32)
+// ══════════════════════════════════════════════════════
+const ROOMS = [
+  // ROW 0
+  {id:0,col:0,row:0,icon:'🛠',name:'مرکز فرماندهی',service:'PuzzleNet HQ',
+   color:'#00d4ff',desc:'قلب گروه فنی پازل‌نت — مدیریت، هماهنگی تیم و برنامه‌ریزی استراتژیک.',
+   link:'https://t.me/pazzle_net',tabs:[0,1,1,0],chars:['سروش','آریا']},
+  {id:1,col:1,row:0,icon:'🌐',name:'زیرساخت شبکه',service:'Network Infrastructure',
+   color:'#00bfff',desc:'طراحی و پیاده‌سازی شبکه‌های سازمانی، VLAN و روتینگ پیشرفته.',
+   link:'https://t.me/pazzle_net',tabs:[0,1,-1,-1],chars:['علی']},
+  {id:2,col:2,row:0,icon:'🔥',name:'فایروال و امنیت',service:'Firewall & Security',
+   color:'#ff4466',desc:'پیکربندی OPNsense، pfSense و سیستم‌های IDS/IPS.',
+   link:'https://t.me/pazzle_net',tabs:[0,1,1,-1],chars:['مریم']},
+  {id:3,col:3,row:0,icon:'📡',name:'وایرلس',service:'Wireless Solutions',
+   color:'#00ff88',desc:'نصب شبکه‌های وایرلس سازمانی، WiFi 6 و Unifi.',
+   link:'https://t.me/pazzle_net',tabs:[0,0,1,-1],chars:['رضا']},
+
+  // ROW 1
+  {id:4,col:0,row:1,icon:'🖥',name:'سرورهای HP',service:'HP Server Solutions',
+   color:'#ffd700',desc:'فروش، نصب و پشتیبانی سرورهای HP ProLiant G9/G10 و رک ۲۷U.',
+   link:'https://t.me/pazzle_net',tabs:[-1,1,1,0],chars:['رضا']},
+  {id:5,col:1,row:1,icon:'🤖',name:'هوش مصنوعی',service:'AI & Automation',
+   color:'#8b5cf6',desc:'پیاده‌سازی مدل‌های زبانی، چت‌بات هوشمند و اتوماسیون با n8n.',
+   link:'https://t.me/pazzle_net',tabs:[1,-1,-1,-1],chars:['آریا','کاوه']},
+  {id:6,col:2,row:1,icon:'🔒',name:'پازل‌نت گیت',service:'VPN — Gate Bot',
+   color:'#00ff88',desc:'فروش VPN اختصاصی با پرداخت ریالی و کریپتو از طریق ربات تلگرام.',
+   link:'https://t.me/puzzlenetgate_bot',tabs:[-1,1,-1,1],chars:['ربات گیت 🔒']},
+  {id:7,col:3,row:1,icon:'💸',name:'پازل‌نت پی',service:'Crypto Payment',
+   color:'#ffd700',desc:'درگاه پرداخت کریپتو با NowPayments — تتر، بیتکوین و سایر ارزها.',
+   link:'https://t.me/puzzlenetpay_bot',tabs:[1,0,-1,1],chars:['ربات پرداخت 💸']},
+
+  // ROW 2
+  {id:8,col:0,row:2,icon:'📥',name:'پازل سیور',service:'Video Downloader Bot',
+   color:'#ff6b35',desc:'دانلود ویدیو از یوتیوب، اینستاگرام و پلتفرم‌های دیگر.',
+   link:'https://t.me/pazzlesaverbot',tabs:[-1,1,1,0],chars:['ربات سیور 📥']},
+  {id:9,col:1,row:2,icon:'🎵',name:'پازل موزیک',service:'Music Finder Bot',
+   color:'#ff69b4',desc:'جستجو و دریافت موسیقی با هوش مصنوعی از طریق ربات تلگرام.',
+   link:'https://t.me/puzzlenetmusic_bot',tabs:[-1,-1,-1,-1],chars:['ربات موزیک 🎵']},
+  {id:10,col:2,row:2,icon:'🏠',name:'خانه هوشمند',service:'Smart Home',
+   color:'#00ff88',desc:'نصب سیستم‌های خانه هوشمند، روشنایی، امنیت و اتوماسیون.',
+   link:'https://t.me/pazzle_net',tabs:[1,1,-1,1],chars:['آرش']},
+  {id:11,col:3,row:2,icon:'☁',name:'ابر و مجازی‌سازی',service:'Cloud & Virtualization',
+   color:'#87ceeb',desc:'راه‌اندازی VMware، Proxmox و مدیریت زیرساخت مجازی.',
+   link:'https://t.me/pazzle_net',tabs:[-1,0,1,1],chars:['نیلوفر']},
+
+  // ROW 3
+  {id:12,col:0,row:3,icon:'📹',name:'دوربین مداربسته',service:'CCTV & Surveillance',
+   color:'#ff4444',desc:'نصب دوربین‌های IP، DVR، NVR و سیستم‌های نظارت تصویری.',
+   link:'https://t.me/pazzle_net',tabs:[-1,1,0,0],chars:['کامران']},
+  {id:13,col:1,row:3,icon:'📊',name:'هوش تجاری',service:'Business Intelligence',
+   color:'#ffd700',desc:'داشبوردهای تحلیلی، گزارش‌گیری هوشمند و تصمیم‌گیری داده‌محور.',
+   link:'https://t.me/pazzle_net',tabs:[-1,-1,0,-1],chars:['سپیده']},
+  {id:14,col:2,row:3,icon:'🎓',name:'آموزش IT',service:'IT Training',
+   color:'#00ff88',desc:'دوره‌های شبکه، امنیت، لینوکس و هوش مصنوعی برای سازمان‌ها.',
+   link:'https://t.me/pazzle_net',tabs:[1,1,0,-1],chars:['استاد احمدی']},
+  {id:15,col:3,row:3,icon:'🚀',name:'آینده — قفل',service:'COMING SOON',
+   color:'#888888',desc:'🔮 این بخش در نسخه‌های آینده پازل‌نت‌ورس باز خواهد شد...',
+   link:'https://t.me/pazzle_net',tabs:[-1,0,0,1],locked:true,chars:['؟']},
+];
+
+// ══════════════════════════════════════════════════════
+// ISO SETUP
+// ══════════════════════════════════════════════════════
+const TW=220, TH=110, EH=70; // tile w/h, extrusion height
+
+function iso(col,row){ return {x:(col-row)*(TW/2), y:(col+row)*(TH/2)}; }
+
+ROOMS.forEach(r=>{ const p=iso(r.col,r.row); r._wx=p.x; r._wy=p.y; });
+
+// ══════════════════════════════════════════════════════
+// PUZZLE PATH
+// tabs: [N,E,S,W]  +1=tab out  -1=blank in  0=flat
+// ══════════════════════════════════════════════════════
+function puzzlePath(ctx, ox, oy, sc, tabs){
+  const hw=TW/2*sc, hh=TH/2*sc;
+  const TR=20*sc; // tab radius
+
+  // corners
+  const N={x:ox,        y:oy-hh};
+  const E={x:ox+hw,     y:oy   };
+  const S={x:ox,        y:oy+hh};
+  const W={x:ox-hw,     y:oy   };
+
+  function lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};}
+  function norm(a,b){const dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy);return{x:-dy/l,y:dx/l};}
+
+  function edge(a,b,tab){
+    if(tab===0){ctx.lineTo(b.x,b.y);return;}
+    const m=lerp(a,b,0.5);
+    const n=norm(a,b);
+    const sign=tab;
+    const tx=m.x+n.x*TR*2.0*sign;
+    const ty=m.y+n.y*TR*2.0*sign;
+    const p1=lerp(a,b,0.32);
+    const p2=lerp(a,b,0.68);
+    ctx.lineTo(p1.x,p1.y);
+    ctx.arcTo(tx,ty,p2.x,p2.y,TR);
+    ctx.lineTo(b.x,b.y);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(N.x,N.y);
+  edge(N,E,tabs[1]); // NE → East
+  edge(E,S,tabs[2]); // ES → South
+  edge(S,W,tabs[3]); // SW → West
+  edge(W,N,tabs[0]); // WN → North
+  ctx.closePath();
+}
+
+// ══════════════════════════════════════════════════════
+// CANVAS & CAMERA
+// ══════════════════════════════════════════════════════
+const C=document.getElementById('world');
+const ctx=C.getContext('2d');
+const MM=document.getElementById('mm');
+const mctx=MM.getContext('2d');
+let W=0,H=0;
+function resize(){W=C.width=window.innerWidth;H=C.height=window.innerHeight;}
+resize();
+window.addEventListener('resize',resize);
+
+const CAM={x:0,y:0,sc:1,tx:0,ty:0,tsc:1};
+
+function center(){
+  CAM.tx=CAM.x=0;
+  CAM.ty=CAM.y=-40;
+  CAM.tsc=CAM.sc=0.85;
+}
+center();
+
+function w2s(wx,wy){return{sx:(wx-CAM.x)*CAM.sc+W/2,sy:(wy-CAM.y)*CAM.sc+H/2};}
+function s2w(sx,sy){return{wx:(sx-W/2)/CAM.sc+CAM.x,wy:(sy-H/2)/CAM.sc+CAM.y};}
+
+// ══════════════════════════════════════════════════════
+// PARTICLES
+// ══════════════════════════════════════════════════════
+const PAL=['#00d4ff','#ff6b35','#00ff88','#8b5cf6','#ffd700','#ff69b4'];
+const PARTS=Array.from({length:50},(_,i)=>({
+  wx:(Math.random()-0.5)*1600,wy:(Math.random()-0.5)*800,
+  vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.25,
+  sz:Math.random()*3+1,col:PAL[i%PAL.length],
+  al:Math.random()*.4+.1,ph:Math.random()*Math.PI*2
+}));
+
+// ══════════════════════════════════════════════════════
+// DRAW CHARACTER
+// ══════════════════════════════════════════════════════
+function drawChar(ctx,x,y,col,t,idx){
+  const bob=Math.sin(t*.04+idx*1.3)*1.5;
+  y+=bob;
+  // shadow
+  ctx.save();ctx.globalAlpha=.2;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(x,y+2,6,2.5,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  // body
+  ctx.fillStyle=col+'33';ctx.strokeStyle=col;ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(x-5,y-20,10,15,2);ctx.fill();ctx.stroke();
+  // head
+  ctx.fillStyle='#f4c591';ctx.beginPath();ctx.arc(x,y-26,5,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=col+'66';ctx.lineWidth=.8;ctx.stroke();
+  // eyes
+  const blink=Math.sin(t*.03+idx*4)>.95;
+  ctx.fillStyle='#222';
+  if(!blink){
+    ctx.beginPath();ctx.arc(x-2,y-27,1.1,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(x+2,y-27,1.1,0,Math.PI*2);ctx.fill();
+  }else{
+    ctx.fillRect(x-3,y-27.5,2.5,.8);ctx.fillRect(x+.5,y-27.5,2.5,.8);
+  }
+  // legs
+  ctx.strokeStyle=col+'88';ctx.lineWidth=1.8;
+  const lw=Math.sin(t*.08+idx)*3;
+  ctx.beginPath();ctx.moveTo(x-3,y-5);ctx.lineTo(x-3+lw,y+1);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+3,y-5);ctx.lineTo(x+3-lw,y+1);ctx.stroke();
+}
+
+// ══════════════════════════════════════════════════════
+// DRAW ONE ROOM
+// ══════════════════════════════════════════════════════
+let hov=null,sel=null,animT=0;
+
+function drawRoom(r){
+  const {sx,sy}=w2s(r._wx,r._wy);
+  const sc=CAM.sc;
+  const hw=TW/2*sc,hh=TH/2*sc,ex=EH*sc;
+  if(sx+hw<-60||sx-hw>W+60||sy+hh+ex<-60||sy-hh>H+60) return;
+
+  const isH=r===hov,isS=r===sel;
+  const lift=(isH||isS)?-7*sc:0;
+
+  ctx.save();
+  ctx.translate(sx,sy+lift);
+
+  // ── 3D LEFT FACE ──
+  const lc=shade(r.color,-50);
+  ctx.beginPath();
+  ctx.moveTo(-hw,0);ctx.lineTo(0,hh);
+  ctx.lineTo(0,hh+ex);ctx.lineTo(-hw,ex);
+  ctx.closePath();
+  ctx.fillStyle=r.locked?'#0d1826':lc;
+  ctx.globalAlpha=.85;ctx.fill();
+  ctx.strokeStyle=r.color+'22';ctx.lineWidth=.8;ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // ── 3D RIGHT FACE ──
+  const rc=shade(r.color,-30);
+  ctx.beginPath();
+  ctx.moveTo(hw,0);ctx.lineTo(0,hh);
+  ctx.lineTo(0,hh+ex);ctx.lineTo(hw,ex);
+  ctx.closePath();
+  ctx.fillStyle=r.locked?'#0f1e30':rc;
+  ctx.globalAlpha=.7;ctx.fill();
+  ctx.strokeStyle=r.color+'22';ctx.lineWidth=.8;ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // ── TOP PUZZLE FACE ──
+  puzzlePath(ctx,0,0,sc,r.tabs||[0,0,0,0]);
+
+  // fill gradient
+  const g=ctx.createRadialGradient(0,-hh*.3,0,0,0,hw*1.1);
+  if(r.locked){
+    g.addColorStop(0,'#1a2840');g.addColorStop(1,'#0a1320');
+  } else {
+    g.addColorStop(0,r.color+'66');
+    g.addColorStop(.5,r.color+'22');
+    g.addColorStop(1,r.color+'0a');
+  }
+  ctx.fillStyle=g;
+  ctx.fill();
+
+  // border
+  ctx.strokeStyle=isH||isS?r.color:r.color+(r.locked?'33':'55');
+  ctx.lineWidth=(isH||isS)?2/sc:.8/sc;
+  if(r.locked)ctx.setLineDash([5/sc,5/sc]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // top N-edge highlight
+  ctx.strokeStyle=r.color+(r.locked?'22':'77');
+  ctx.lineWidth=1.5/sc;
+  ctx.beginPath();ctx.moveTo(-hw,0);ctx.lineTo(0,-hh);ctx.lineTo(hw,0);ctx.stroke();
+
+  // glow on hover
+  if(isH||isS){
+    ctx.shadowColor=r.color;ctx.shadowBlur=18*sc;
+    puzzlePath(ctx,0,0,sc,r.tabs||[0,0,0,0]);
+    ctx.strokeStyle=r.color+'99';ctx.lineWidth=1.5/sc;ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  // ── CONTENT ──
+  if(sc>.3){
+    ctx.globalAlpha=r.locked?.3:.95;
+    // icon
+    ctx.font=`${Math.max(12,22*sc)}px serif`;
+    ctx.textAlign='center';
+    ctx.fillText(r.icon,0,-6*sc);
+    if(r.locked){
+      ctx.font=`${Math.max(9,12*sc)}px serif`;
+      ctx.fillText('🔒',0,-24*sc);
+    }
+    // name
+    if(sc>.38){
+      ctx.font=`bold ${Math.max(7,10*sc)}px 'Vazirmatn',sans-serif`;
+      ctx.fillStyle=r.color;
+      ctx.fillText(r.name,0,14*sc);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // ── CHARACTERS ──
+  if(sc>.7&&!r.locked){
+    r.chars.forEach((ch,ci)=>{
+      const cx=(ci-r.chars.length/2+.5)*28*sc;
+      const cy=-16*sc;
+      drawChar(ctx,cx,cy,r.color,animT,r.id*5+ci);
+    });
+  }
+
+  // ── HOVER LABEL ──
+  if(isH||isS){
+    const ly=-hh-14*sc;
+    ctx.font=`bold ${Math.max(9,12*sc)}px 'Vazirmatn',sans-serif`;
+    ctx.textAlign='center';
+    const tw=ctx.measureText(r.name).width;
+    ctx.fillStyle='rgba(3,8,15,.9)';
+    ctx.beginPath();ctx.roundRect(-tw/2-8,ly-16*sc,tw+16,20*sc,5);ctx.fill();
+    ctx.strokeStyle=r.color+'55';ctx.lineWidth=1/sc;ctx.stroke();
+    ctx.fillStyle=r.color;ctx.fillText(r.name,0,ly);
+  }
+
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════
+// CONNECTIONS (data packets)
+// ══════════════════════════════════════════════════════
+function drawConnections(){
+  if(CAM.sc<.35) return;
+  const done=new Set();
+  ROOMS.forEach(r=>{
+    ROOMS.forEach(nb=>{
+      if(nb===r) return;
+      if(Math.abs(nb.col-r.col)+Math.abs(nb.row-r.row)!==1) return;
+      const key=[Math.min(r.id,nb.id),Math.max(r.id,nb.id)].join('-');
+      if(done.has(key)) return;
+      done.add(key);
+      const a=w2s(r._wx,r._wy),b=w2s(nb._wx,nb._wy);
+      ctx.strokeStyle=r.color+'15';ctx.lineWidth=1;
+      ctx.setLineDash([3,9]);
+      ctx.beginPath();ctx.moveTo(a.sx,a.sy);ctx.lineTo(b.sx,b.sy);ctx.stroke();
+      ctx.setLineDash([]);
+      const p=((animT*.006+r.id*.17)%1);
+      const px=a.sx+(b.sx-a.sx)*p,py=a.sy+(b.sy-a.sy)*p;
+      ctx.globalAlpha=.65;ctx.fillStyle=r.color;
+      ctx.beginPath();ctx.arc(px,py,2.2*CAM.sc,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// MINIMAP
+// ══════════════════════════════════════════════════════
+function drawMM(){
+  const mw=180,mh=140;
+  mctx.fillStyle='#03080f';mctx.fillRect(0,0,mw,mh);
+  const xs=ROOMS.map(r=>r._wx),ys=ROOMS.map(r=>r._wy);
+  const minX=Math.min(...xs)-130,maxX=Math.max(...xs)+130;
+  const minY=Math.min(...ys)-80, maxY=Math.max(...ys)+80;
+  const ww=maxX-minX,wh=maxY-minY;
+  function mm(wx,wy){return{mx:(wx-minX)/ww*mw,my:(wy-minY)/wh*mh};}
+  ROOMS.forEach(r=>{
+    const{mx,my}=mm(r._wx,r._wy);
+    mctx.fillStyle=r===hov?r.color:r.color+'77';
+    const ts=5;
+    mctx.beginPath();
+    mctx.moveTo(mx,my-ts);mctx.lineTo(mx+ts,my);
+    mctx.lineTo(mx,my+ts);mctx.lineTo(mx-ts,my);
+    mctx.closePath();mctx.fill();
+  });
+  const tl=s2w(0,0),br=s2w(W,H);
+  const{mx:tlx,my:tly}=mm(tl.wx,tl.wy);
+  const{mx:brx,my:bry}=mm(br.wx,br.wy);
+  mctx.strokeStyle='#ffffff44';mctx.lineWidth=1;
+  mctx.strokeRect(tlx,tly,brx-tlx,bry-tly);
+}
+
+// ══════════════════════════════════════════════════════
+// HIT TEST
+// ══════════════════════════════════════════════════════
+function hitTest(sx,sy){
+  const sorted=[...ROOMS].sort((a,b)=>(b.col+b.row)-(a.col+a.row));
+  for(const r of sorted){
+    const s=w2s(r._wx,r._wy);
+    const lx=(sx-s.sx)/CAM.sc,ly=(sy-s.sy)/CAM.sc;
+    if(Math.abs(lx/(TW/2))+Math.abs(ly/(TH/2))<1.08) return r;
+  }
+  return null;
+}
+
+// ══════════════════════════════════════════════════════
+// MAIN LOOP
+// ══════════════════════════════════════════════════════
+function frame(){
+  animT++;
+  // smooth camera
+  const e=.1;
+  CAM.x+=(CAM.tx-CAM.x)*e;CAM.y+=(CAM.ty-CAM.y)*e;CAM.sc+=(CAM.tsc-CAM.sc)*e;
+
+  // bg
+  ctx.fillStyle='#03080f';ctx.fillRect(0,0,W,H);
+  // grid
+  const gs=70*CAM.sc;
+  const ox=(W/2-CAM.x*CAM.sc)%gs,oy=(H/2-CAM.y*CAM.sc)%gs;
+  ctx.strokeStyle='rgba(0,212,255,0.035)';ctx.lineWidth=.5;
+  for(let x=ox;x<W;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=oy;y<H;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+  // particles
+  PARTS.forEach(p=>{
+    p.wx+=p.vx;p.wy+=p.vy;
+    if(p.wx>1000)p.wx=-1000;if(p.wx<-1000)p.wx=1000;
+    if(p.wy>600)p.wy=-600;if(p.wy<-600)p.wy=600;
+    const{sx,sy}=w2s(p.wx,p.wy);
+    if(sx<-5||sx>W+5||sy<-5||sy>H+5) return;
+    ctx.globalAlpha=p.al*(0.5+0.5*Math.sin(animT*.05+p.ph));
+    ctx.fillStyle=p.col;
+    ctx.fillRect(sx-p.sz/2,sy-p.sz/2,p.sz,p.sz*.5);
+    ctx.globalAlpha=1;
+  });
+
+  drawConnections();
+
+  // sort by depth
+  const sorted=[...ROOMS].sort((a,b)=>(a.col+a.row)-(b.col+b.row));
+  sorted.forEach(drawRoom);
+
+  drawMM();
+
+  // HUD
+  const cw=s2w(W/2,H/2);
+  document.getElementById('cEl').textContent=`${Math.round(cw.wx)} , ${Math.round(cw.wy)}`;
+  document.getElementById('zEl').textContent=`زوم: ${CAM.sc.toFixed(2)}×`;
+
+  requestAnimationFrame(frame);
+}
+
+// ══════════════════════════════════════════════════════
+// INPUT
+// ══════════════════════════════════════════════════════
+let drag=false,lmx=0,lmy=0,didDrag=false;
+C.addEventListener('mousedown',e=>{drag=true;didDrag=false;lmx=e.clientX;lmy=e.clientY;});
+window.addEventListener('mouseup',e=>{
+  if(!didDrag){
+    const r=hitTest(e.clientX,e.clientY);
+    r?openRoom(r):closePanel();
+  }
+  drag=false;
+});
+window.addEventListener('mousemove',e=>{
+  if(drag){
+    const dx=e.clientX-lmx,dy=e.clientY-lmy;
+    if(Math.abs(dx)+Math.abs(dy)>3) didDrag=true;
+    CAM.tx-=dx/CAM.sc;CAM.ty-=dy/CAM.sc;
+    lmx=e.clientX;lmy=e.clientY;
+  }
+  const r=hitTest(e.clientX,e.clientY);
+  hov=r;C.style.cursor=r?'pointer':'grab';
+  const tip=document.getElementById('tooltip');
+  if(r&&r!==sel){
+    tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px';
+    tip.style.top=e.clientY+'px';
+    tip.textContent=r.icon+' '+r.name;
+  } else {tip.style.display='none';}
+});
+
+C.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=e.deltaY<0?1.1:.9;
+  const{wx,wy}=s2w(e.clientX,e.clientY);
+  CAM.tsc=Math.min(2.5,Math.max(.2,CAM.tsc*f));
+  CAM.tx=wx-(e.clientX-W/2)/CAM.tsc;
+  CAM.ty=wy-(e.clientY-H/2)/CAM.tsc;
+},{passive:false});
+
+window.addEventListener('keydown',e=>{
+  const sp=50/CAM.sc;
+  if(e.key==='ArrowLeft'||e.key==='a') CAM.tx-=sp;
+  if(e.key==='ArrowRight'||e.key==='d') CAM.tx+=sp;
+  if(e.key==='ArrowUp'||e.key==='w') CAM.ty-=sp;
+  if(e.key==='ArrowDown'||e.key==='s') CAM.ty+=sp;
+  if(e.key==='+'||e.key==='=') CAM.tsc=Math.min(2.5,CAM.tsc*1.12);
+  if(e.key==='-') CAM.tsc=Math.max(.2,CAM.tsc*.88);
+  if(e.key==='r'||e.key==='R') center();
+  if(e.key==='Escape') closePanel();
+});
+
+// touch
+let ltd=null,ltx=0,lty=0;
+C.addEventListener('touchstart',e=>{if(e.touches.length===1){drag=true;didDrag=false;ltx=e.touches[0].clientX;lty=e.touches[0].clientY;}},{passive:true});
+C.addEventListener('touchend',e=>{
+  if(!didDrag&&e.changedTouches.length===1){
+    const t2=e.changedTouches[0];
+    const r=hitTest(t2.clientX,t2.clientY);r?openRoom(r):closePanel();
+  }
+  drag=false;ltd=null;
+},{passive:true});
+C.addEventListener('touchmove',e=>{
+  if(e.touches.length===1&&drag){
+    const dx=e.touches[0].clientX-ltx,dy=e.touches[0].clientY-lty;
+    if(Math.abs(dx)+Math.abs(dy)>3) didDrag=true;
+    CAM.tx-=dx/CAM.sc;CAM.ty-=dy/CAM.sc;
+    ltx=e.touches[0].clientX;lty=e.touches[0].clientY;
+  }else if(e.touches.length===2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(ltd) CAM.tsc=Math.min(2.5,Math.max(.2,CAM.tsc*(d/ltd)));
+    ltd=d;
+  }
+},{passive:true});
+
+// ══════════════════════════════════════════════════════
+// PANEL
+// ══════════════════════════════════════════════════════
+function openRoom(r){
+  sel=r;
+  document.getElementById('pi').textContent=r.icon;
+  document.getElementById('pn').textContent=r.name;
+  document.getElementById('ps').textContent=r.service;
+  document.getElementById('pd').textContent=r.desc;
+  document.getElementById('pl').href=r.link;
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('roomLabel').textContent=r.name;
+  CAM.tx=r._wx;CAM.ty=r._wy-50;
+}
+function closePanel(){
+  sel=null;
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('roomLabel').textContent='خوش آمدید به پازل‌نت ورس';
+}
+document.getElementById('pclose').addEventListener('click',closePanel);
+
+// ══════════════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════════════
+const STEPS=['اتصال به سرور پازل‌نت...','بارگذاری نقشه...','رسم قطعات پازل...','فعال‌سازی شخصیت‌ها...','آماده!'];
+let si=0;
+const bi=setInterval(()=>{
+  si++;
+  document.getElementById('bbar').style.width=(si/STEPS.length*100)+'%';
+  document.getElementById('bstat').textContent=STEPS[Math.min(si,STEPS.length-1)];
+  if(si>=STEPS.length){
+    clearInterval(bi);
+    setTimeout(()=>{
+      const b=document.getElementById('boot');
+      b.classList.add('hidden');
+      setTimeout(()=>b.remove(),900);
+    },300);
+  }
+},320);
+
+frame();
+</script>
 </body>
 </html>
