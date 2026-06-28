@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پازل‌نت ورس — PuzzleNet Verse</title>
+  <meta name="description" content="دنیای تعاملی سه‌بعدی گروه فنی پازل‌نت — کاوش در ۳۲ اتاق خدمات دیجیتال" />
+  <meta property="og:title" content="PuzzleNet Verse" />
+  <meta property="og:description" content="Interactive isometric world by PuzzleNet Technical Group" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ── BOOT SCREEN ─────────────────────────────────────── -->
+<div id="boot">
+  <div class="boot-logo">
+    <svg width="80" height="80" viewBox="0 0 80 80">
+      <!-- Puzzle piece SVG logo -->
+      <path d="M10 10 h22 v8 a6 6 0 0 1 0 12 v8 h-22 v-8 a6 6 0 0 0 0-12 z" fill="none" stroke="#00d4ff" stroke-width="2"/>
+      <path d="M38 10 h22 v8 a6 6 0 0 1 0 12 v8 h-8 a6 6 0 0 0-12 0 h-2z" fill="none" stroke="#ff6b35" stroke-width="2"/>
+      <path d="M10 46 h8 a6 6 0 0 1 12 0 h2 v22 h-22 z" fill="none" stroke="#00ff88" stroke-width="2"/>
+      <path d="M38 46 h22 v22 h-8 a6 6 0 0 0-12 0 h-2 z" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+    </svg>
+    <div class="boot-title">PUZZLENET VERSE</div>
+    <div class="boot-sub">گروه فنی پازل‌نت</div>
+  </div>
+  <div class="boot-bar-wrap"><div class="boot-bar" id="bootBar"></div></div>
+  <div class="boot-status" id="bootStatus">در حال بارگذاری دنیا...</div>
+</div>
+
+<!-- ── HUD ─────────────────────────────────────────────── -->
+<div id="hud">
+  <div class="hud-logo">PUZZLE<span>NET</span> VERSE</div>
+  <div class="hud-center">
+    <div class="hud-pill" id="roomLabel">خوش آمدید به پازل‌نت ورس</div>
+  </div>
+  <div class="hud-right">
+    <div class="hud-stat" id="coordsEl">۰ , ۰</div>
+    <div class="hud-stat" id="zoomEl">زوم: ۱×</div>
+  </div>
+</div>
+
+<!-- ── CONTROLS HINT ───────────────────────────────────── -->
+<div id="controls">
+  <span>🖱 درگ</span><span>🔍 اسکرول</span><span>⌨ WASD</span><span>R بازنشانی</span>
+</div>
+
+<!-- ── ROOM INFO PANEL ─────────────────────────────────── -->
+<div id="infoPanel">
+  <button id="infoPanelClose">✕</button>
+  <div class="ip-icon" id="ipIcon">🌐</div>
+  <div class="ip-name" id="ipName">نام اتاق</div>
+  <div class="ip-service" id="ipService">خدمت</div>
+  <div class="ip-desc" id="ipDesc">توضیحات</div>
+  <a class="ip-link" id="ipLink" href="#" target="_blank">بیشتر بدانید ←</a>
+</div>
+
+<!-- ── MINIMAP ─────────────────────────────────────────── -->
+<div id="minimapWrap">
+  <div class="mm-label">نقشه کوچک</div>
+  <canvas id="minimap" width="200" height="160"></canvas>
+</div>
+
+<!-- ── MAIN CANVAS ────────────────────────────────────── -->
+<canvas id="world"></canvas>
+
+<!-- ── TOOLTIP ────────────────────────────────────────── -->
+<div id="tooltip"></div>
+
+<script src="js/rooms.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/world.js"></script>
+</body>
+</html>
