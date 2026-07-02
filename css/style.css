@@ -27,11 +27,53 @@ html, body {
 }
 
 canvas#world {
+  position: fixed; inset: 0;
   display: block;
   cursor: grab;
   touch-action: none;
+  z-index: 0;
 }
 canvas#world:active { cursor: grabbing; }
+
+#labelLayer {
+  position: fixed; inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  overflow: hidden;
+}
+#labelLayer > div { position: absolute; top: 0; left: 0; }
+
+/* ── 3D ROOM LABELS (CSS2DObject) ─────────── */
+.room-label {
+  pointer-events: none;
+  display: flex; flex-direction: column; align-items: center;
+  transform: translate(-50%, -100%);
+  gap: 2px;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
+}
+.room-label .rl-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.room-label .rl-name {
+  font-size: 11px; font-weight: 800;
+  font-family: var(--font);
+  color: var(--room-color, var(--cyan));
+  background: rgba(3,8,15,0.55);
+  padding: 2px 8px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  white-space: nowrap;
+  opacity: 0.85;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.room-label.locked .rl-name { opacity: 0.4; }
+.room-label.hover .rl-name,
+.room-label.selected .rl-name {
+  opacity: 1;
+  transform: scale(1.08);
+  border-color: var(--room-color, var(--cyan));
+  box-shadow: 0 0 14px var(--room-color, var(--cyan));
+}
 
 /* ── BOOT ──────────────────────────────────── */
 #boot {

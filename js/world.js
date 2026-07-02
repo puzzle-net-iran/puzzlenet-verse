@@ -1,460 +1,395 @@
 /* ════════════════════════════════════════════
    PuzzleNet Verse — world.js
-   Main engine: camera, draw loop, interaction
+   Three.js scene: camera orbit, rooms, interaction
    ════════════════════════════════════════════ */
 
 (function() {
   'use strict';
 
-  const R   = window.Renderer;
+  const R     = window.Renderer;
   const ROOMS = window.ROOMS;
 
-  /* ── CANVAS SETUP ────────────────────────── */
-  const canvas  = document.getElementById('world');
-  const ctx     = canvas.getContext('2d');
-  const mmCanvas = document.getElementById('minimap');
-  const mctx    = mmCanvas.getContext('2d');
+  /* ── RENDERERS ───────────────────────────── */
+  const canvas = document.getElementById('world');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const labelLayer = document.getElementById('labelLayer');
+  const labelRenderer = new THREE.CSS2DRenderer();
+  labelLayer.appendChild(labelRenderer.domElement);
 
   let W = 0, H = 0;
   function resize() {
-    W = canvas.width  = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  /* ── CAMERA ──────────────────────────────── */
-  const CAM = { x: 0, y: 0, scale: 1, targetX: 0, targetY: 0, targetScale: 1 };
-
-  // Center camera on world initially
-  function centerCamera() {
-    const worldSpan = R.isoProject(R.COLS - 1, R.ROWS - 1);
-    CAM.x = CAM.targetX = -W/2 + worldSpan.x/2;
-    CAM.y = CAM.targetY = -H/2 + worldSpan.y/2 + 80;
-    CAM.scale = CAM.targetScale = 0.9;
+    W = window.innerWidth; H = window.innerHeight;
+    renderer.setSize(W, H);
+    labelRenderer.setSize(W, H);
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
   }
 
-  /* ── ROOM WORLD POSITIONS ────────────────── */
+  /* ── SCENE / CAMERA ──────────────────────── */
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x03080f);
+  scene.fog = new THREE.Fog(0x03080f, 900, 2600);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 1, 6000);
+
+  const ambient = new THREE.HemisphereLight(0x335577, 0x03080f, 0.9);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xbfe6ff, 1.1);
+  sun.position.set(600, 900, 300);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -1200; sun.shadow.camera.right = 1200;
+  sun.shadow.camera.top = 1200; sun.shadow.camera.bottom = -1200;
+  sun.shadow.camera.near = 100; sun.shadow.camera.far = 2500;
+  sun.shadow.bias = -0.0015;
+  scene.add(sun);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(6000, 6000),
+    new THREE.MeshStandardMaterial({ color: 0x050c18, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.5;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const grid = new THREE.GridHelper(4000, 80, 0x00d4ff, 0x00d4ff);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.05;
+  grid.position.y = -0.3;
+  scene.add(grid);
+
+  /* ── CAMERA ORBIT/PAN/ZOOM STATE ─────────── */
+  const CAM = {
+    target: { x: 0, z: 0 }, tTarget: { x: 0, z: 0 },
+    azimuth: Math.PI * 0.25, tAzimuth: Math.PI * 0.25,
+    polar: 1.0, tPolar: 1.0,          // radians from vertical (Y) axis
+    dist: 950, tDist: 950,
+  };
+  const DIST_MIN = 260, DIST_MAX = 2400;
+  const POLAR_MIN = 0.45, POLAR_MAX = 1.35;
+
+  function worldBounds() {
+    const xs = ROOMS.map(r => r._wx), zs = ROOMS.map(r => r._wz);
+    return {
+      cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+      cz: (Math.min(...zs) + Math.max(...zs)) / 2,
+    };
+  }
+
+  function resetCamera() {
+    const b = worldBounds();
+    CAM.target.x = CAM.tTarget.x = b.cx;
+    CAM.target.z = CAM.tTarget.z = b.cz;
+    CAM.azimuth  = CAM.tAzimuth  = Math.PI * 0.25;
+    CAM.polar    = CAM.tPolar    = 1.0;
+    CAM.dist     = CAM.tDist     = 950;
+  }
+
+  function updateCameraPosition() {
+    const sp = Math.sin(CAM.polar), cp = Math.cos(CAM.polar);
+    const x = CAM.target.x + CAM.dist * sp * Math.sin(CAM.azimuth);
+    const z = CAM.target.z + CAM.dist * sp * Math.cos(CAM.azimuth);
+    const y = CAM.dist * cp;
+    camera.position.set(x, Math.max(30, y), z);
+    camera.lookAt(CAM.target.x, 55, CAM.target.z);
+  }
+
+  /* ── ROOM WORLD POSITIONS + BUILD MESHES ─── */
+  const roomMeshes = [];
+  const animatedChars = [];
+  const animatedProps = [];
+
   ROOMS.forEach(room => {
-    const iso = R.isoProject(room.col, room.row);
-    room._wx  = iso.x;   // world center x
-    room._wy  = iso.y;   // world center y
+    const p = R.gridToWorld(room.col, room.row);
+    room._wx = p.x; room._wz = p.z;
+
+    const mesh = R.buildRoomMesh(room);
+    mesh.position.set(p.x, 0, p.z);
+    scene.add(mesh);
+    roomMeshes.push(mesh);
+    room._mesh = mesh;
+
+    // Label (icon + name), floating above tile
+    const el = document.createElement('div');
+    el.className = 'room-label' + (room.locked ? ' locked' : '');
+    el.innerHTML = `<div class="rl-icon">${room.locked ? '🔒' : room.icon}</div><div class="rl-name">${room.name}</div>`;
+    el.style.setProperty('--room-color', room.color);
+    const label = new THREE.CSS2DObject(el);
+    label.position.set(p.x, R.ROOM_H + 26, p.z);
+    mesh.add(label);
+    room._label = el;
+
+    if (!room.locked) {
+      // Characters standing on the tile
+      const positions = room.chars.map((name, ci) => ({
+        name,
+        dx: (ci - room.chars.length / 2 + 0.5) * 26,
+        dz: ci % 2 === 0 ? -8 : 8,
+        anim: ['idle', 'walk', 'idle', 'walk'][ci % 4],
+        idx: room.id * 10 + ci,
+      }));
+      positions.forEach(cp => {
+        const group = R.createCharacter(room.color);
+        group.position.set(cp.dx, R.ROOM_H, cp.dz);
+        group.userData.baseY = R.ROOM_H;
+        mesh.add(group);
+        animatedChars.push({ group, anim: cp.anim, idx: cp.idx });
+      });
+
+      // Objects
+      const objs = room.objects || [];
+      const hasServer  = objs.some(o => o.includes('سرور') || o.toLowerCase().includes('hp') || o.includes('رک') || o.includes('NAS'));
+      const hasMonitor = objs.some(o => o.includes('داشبورد') || o.includes('کنسول') || o.includes('پنل') || o.includes('نمایش'));
+      if (hasServer) {
+        const rack = R.createServerRack(room.color);
+        rack.position.set(-45, R.ROOM_H, 15);
+        mesh.add(rack);
+        animatedProps.push({ type: 'rack', group: rack, x: room.id });
+      }
+      if (hasMonitor) {
+        const mon = R.createMonitor(room.color);
+        mon.position.set(45, R.ROOM_H, -10);
+        mesh.add(mon);
+        animatedProps.push({ type: 'monitor', group: mon });
+      }
+    }
   });
 
-  /* ── COORDINATE HELPERS ──────────────────── */
-  function worldToScreen(wx, wy) {
-    return {
-      sx: (wx - CAM.x) * CAM.scale + W/2,
-      sy: (wy - CAM.y) * CAM.scale + H/2,
-    };
-  }
-  function screenToWorld(sx, sy) {
-    return {
-      wx: (sx - W/2) / CAM.scale + CAM.x,
-      wy: (sy - H/2) / CAM.scale + CAM.y,
-    };
-  }
-
-  /* ── PARTICLES ───────────────────────────── */
-  const PALETTE = ['#00d4ff','#ff6b35','#00ff88','#8b5cf6','#ffd700','#ff69b4'];
-  const particles = Array.from({ length: 60 }, (_, i) => ({
-    wx: (Math.random() - 0.5) * 1800,
-    wy: (Math.random() - 0.2) * 900,
-    vx: (Math.random() - 0.5) * 0.5,
-    vy: (Math.random() - 0.5) * 0.3,
-    size: Math.random() * 3 + 1,
-    color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-    alpha: Math.random() * 0.5 + 0.15,
-    phase: Math.random() * Math.PI * 2,
-    sx: 0, sy: 0,
-  }));
-
-  /* ── ANIMATED CHARS PER ROOM ─────────────── */
-  // Assign each room a few character positions relative to room center
-  ROOMS.forEach((room, ri) => {
-    room._charPositions = room.chars.map((name, ci) => ({
-      name,
-      dx: (ci - room.chars.length/2 + 0.5) * 30,
-      dy: ci % 2 === 0 ? -10 : 5,
-      anim: ['idle','walk','type','idle'][ci % 4],
-      idx: ri * 10 + ci,
-    }));
-  });
-
-  /* ── ANIMATION TIME ──────────────────────── */
-  let t = 0;
-  let hoveredRoom = null;
-  let selectedRoom = null;
-
-  /* ══════════════════════════════════════════
-     DRAW BACKGROUND
-  ══════════════════════════════════════════ */
-  function drawBackground() {
-    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.8);
-    grad.addColorStop(0, '#060d1a');
-    grad.addColorStop(1, '#03080f');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Grid lines
-    const gs = 60 * CAM.scale;
-    const ox = (W/2 - CAM.x * CAM.scale) % gs;
-    const oy = (H/2 - CAM.y * CAM.scale) % gs;
-    ctx.strokeStyle = 'rgba(0,212,255,0.04)';
-    ctx.lineWidth = 0.5;
-    for (let x = ox; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-    for (let y = oy; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-  }
-
-  /* ══════════════════════════════════════════
-     DRAW ONE ROOM (isometric puzzle piece)
-  ══════════════════════════════════════════ */
-  function drawRoom(room) {
-    const { sx, sy } = worldToScreen(room._wx, room._wy);
-    const sc   = CAM.scale;
-    const hw   = R.TILE_W / 2 * sc;
-    const hh   = R.TILE_H / 2 * sc;
-    const exH  = R.ROOM_H * sc;
-
-    // Culling
-    if (sx + hw < -50 || sx - hw > W + 50 || sy + hh + exH < -50 || sy - hh > H + 50) return;
-
-    const isHov = room === hoveredRoom;
-    const isSel = room === selectedRoom;
-    const locked = room.locked;
-    const hoverY = (isHov || isSel) ? -6 * sc : 0;
-
-    ctx.save();
-    ctx.translate(sx, sy + hoverY);
-
-    const s = sc; // local scale
-
-    /* ── 3D EXTRUSION sides (draw before top) ── */
-    // Shift down for side faces
-    ctx.save();
-    ctx.translate(0, exH * 0.5);
-
-    // Left face (darker)
-    const leftColor = shadeColor(room.accent || room.color, -40);
-    R.drawExtrusionLeft(ctx, 0, 0, leftColor, locked ? 0.3 : 0.85);
-
-    // Right face (medium)
-    const rightColor = shadeColor(room.accent || room.color, -20);
-    R.drawExtrusionRight(ctx, 0, 0, rightColor, locked ? 0.3 : 0.7);
-
-    ctx.restore();
-
-    /* ── TOP FACE (puzzle piece) ── */
-    // Build path at local origin
-    const fakeRoom = Object.assign({}, room, {
-      tabs: room.tabs,
-    });
-
-    // Build puzzle path scaled
-    ctx.save();
-    ctx.scale(s, s);
-    R.buildPuzzlePath(ctx, 0, 0, fakeRoom);
-    ctx.restore();
-
-    // Fill gradient
-    if (!locked) {
-      const grad = ctx.createRadialGradient(0, -hh*0.3, 0, 0, 0, hw * 1.2);
-      grad.addColorStop(0, room.color + '55');
-      grad.addColorStop(0.5, room.color + '22');
-      grad.addColorStop(1, room.accent + '11');
-      ctx.fillStyle = grad;
-    } else {
-      ctx.fillStyle = '#111a28';
-    }
-    ctx.fill();
-
-    // Border glow
-    ctx.strokeStyle = isHov || isSel ? room.color : room.color + '55';
-    ctx.lineWidth   = isHov || isSel ? 2 / s : 1 / s;
-    if (locked) ctx.setLineDash([4/s, 4/s]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Top accent line (N edge highlight)
-    ctx.strokeStyle = room.color + (locked ? '33' : '99');
-    ctx.lineWidth = 1.5 / s;
-    ctx.beginPath();
-    ctx.moveTo(-R.TILE_W/2, 0);
-    ctx.lineTo(0, -R.TILE_H/2);
-    ctx.lineTo(R.TILE_W/2, 0);
-    ctx.stroke();
-
-    // Inner glow on hover
-    if (isHov || isSel) {
-      ctx.save();
-      ctx.scale(s, s);
-      R.buildPuzzlePath(ctx, 0, 0, fakeRoom);
-      ctx.restore();
-      ctx.shadowColor = room.color;
-      ctx.shadowBlur  = 20 * s;
-      ctx.strokeStyle = room.color + 'aa';
-      ctx.lineWidth   = 1.5 / s;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-
-    // ── ROOM CONTENT (icon + label) ──
-    if (sc > 0.35) {
-      // Icon
-      const iconSize = Math.max(14, 26 * sc);
-      ctx.font = `${iconSize}px serif`;
-      ctx.textAlign = 'center';
-      ctx.globalAlpha = locked ? 0.3 : 0.95;
-      ctx.fillText(room.icon, 0, -8 * sc);
-
-      // Name label
-      if (sc > 0.45) {
-        ctx.font = `bold ${Math.max(8, 11 * sc)}px 'Vazirmatn', sans-serif`;
-        ctx.fillStyle = room.color;
-        ctx.globalAlpha = locked ? 0.3 : 0.8;
-        ctx.fillText(room.name, 0, 14 * sc);
-      }
-
-      if (locked) {
-        ctx.font = `${Math.max(10, 14 * sc)}px serif`;
-        ctx.fillStyle = '#ffffff44';
-        ctx.globalAlpha = 0.6;
-        ctx.fillText('🔒', 0, -22 * sc);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    /* ── CHARACTERS ── */
-    if (sc > 0.6 && !locked) {
-      room._charPositions.forEach((cp, ci) => {
-        const cx = cp.dx * sc;
-        const cy = cp.dy * sc - 18 * sc;
-        R.drawCharacter(ctx, cx, cy, room.color, cp.anim, t, cp.idx);
-      });
-    }
-
-    /* ── OBJECTS ── */
-    if (sc > 0.7 && !locked) {
-      const hasServer = room.objects.some(o => o.toLowerCase().includes('سرور') || o.toLowerCase().includes('hp'));
-      const hasMonitor = room.objects.some(o => o.toLowerCase().includes('داشبورد') || o.toLowerCase().includes('کنسول') || o.toLowerCase().includes('پنل'));
-      if (hasServer) R.drawServerRack(ctx, -30*sc, 10*sc, room.color, t);
-      if (hasMonitor) R.drawMonitor(ctx, 30*sc, 0, room.color, t);
-    }
-
-    /* ── ROOM ID (debug, only at high zoom) ── */
-    // (removed for production)
-
-    ctx.restore();
-
-    /* ── FLOATING LABEL ABOVE ROOM ── */
-    if ((isHov || isSel) && sc > 0.4) {
-      const lx = sx, ly = sy + hoverY - hh - 16 * sc;
-      ctx.save();
-      ctx.font = `bold ${Math.max(10, 13*sc)}px 'Vazirmatn', sans-serif`;
-      ctx.textAlign = 'center';
-      const label = room.name;
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = 'rgba(3,8,15,0.88)';
-      ctx.beginPath();
-      ctx.roundRect(lx - tw/2 - 8, ly - 16*sc, tw + 16, 20*sc, 6);
-      ctx.fill();
-      ctx.strokeStyle = room.color + '66';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = room.color;
-      ctx.fillText(label, lx, ly - 1*sc);
-      ctx.restore();
-    }
-  }
-
-  /* ══════════════════════════════════════════
-     DRAW CONNECTION LINES BETWEEN ROOMS
-  ══════════════════════════════════════════ */
-  function drawConnections() {
-    if (CAM.scale < 0.4) return;
-    const pairsDone = new Set();
-    ROOMS.forEach(room => {
-      const neighbors = getNeighbors(room);
-      neighbors.forEach(nb => {
-        const key = [Math.min(room.id, nb.id), Math.max(room.id, nb.id)].join('-');
-        if (pairsDone.has(key)) return;
-        pairsDone.add(key);
-
-        const a = worldToScreen(room._wx, room._wy);
-        const b = worldToScreen(nb._wx,  nb._wy);
-
-        // Data packet animation along this edge
-        const prog = ((t * 0.008 + (room.id * 0.13)) % 1);
-        const px = a.sx + (b.sx - a.sx) * prog;
-        const py = a.sy + (b.sy - a.sy) * prog;
-
-        ctx.strokeStyle = room.color + '18';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 8]);
-        ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = room.color;
-        ctx.beginPath(); ctx.arc(px, py, 2.5 * CAM.scale, 0, Math.PI*2); ctx.fill();
-        ctx.globalAlpha = 1;
-      });
-    });
-  }
-
+  /* ── CONNECTIONS (data packets between neighbors) ── */
+  const connections = [];
   function getNeighbors(room) {
     return ROOMS.filter(r =>
       (r.col === room.col && Math.abs(r.row - room.row) === 1) ||
       (r.row === room.row && Math.abs(r.col - room.col) === 1)
     );
   }
-
-  /* ══════════════════════════════════════════
-     DRAW PARTICLES
-  ══════════════════════════════════════════ */
-  function updateAndDrawParticles() {
-    particles.forEach(p => {
-      p.wx += p.vx;
-      p.wy += p.vy;
-      // Wrap
-      if (p.wx > 1200) p.wx = -1200;
-      if (p.wx < -1200) p.wx = 1200;
-      if (p.wy > 800) p.wy = -400;
-      if (p.wy < -400) p.wy = 800;
-      const { sx, sy } = worldToScreen(p.wx, p.wy);
-      p.sx = sx; p.sy = sy;
-      if (sx > -10 && sx < W+10 && sy > -10 && sy < H+10) {
-        R.drawParticle(ctx, p, t);
-      }
-    });
-  }
-
-  /* ══════════════════════════════════════════
-     MINIMAP
-  ══════════════════════════════════════════ */
-  function drawMinimap() {
-    const mw = mmCanvas.width, mh = mmCanvas.height;
-    mctx.fillStyle = '#03080f';
-    mctx.fillRect(0, 0, mw, mh);
-
-    // World bounds
-    const allX = ROOMS.map(r => r._wx);
-    const allY = ROOMS.map(r => r._wy);
-    const minX = Math.min(...allX) - 140;
-    const maxX = Math.max(...allX) + 140;
-    const minY = Math.min(...allY) - 80;
-    const maxY = Math.max(...allY) + 80;
-    const ww = maxX - minX, wh = maxY - minY;
-
-    function toMM(wx, wy) {
-      return {
-        mx: ((wx - minX) / ww) * mw,
-        my: ((wy - minY) / wh) * mh,
-      };
-    }
-
+  (function buildConnections() {
+    const done = new Set();
     ROOMS.forEach(room => {
-      const { mx, my } = toMM(room._wx, room._wy);
-      mctx.fillStyle = room.color + (room === hoveredRoom ? 'ff' : '66');
-      const ts = 6;
-      mctx.beginPath();
-      mctx.moveTo(mx, my - ts/2);
-      mctx.lineTo(mx + ts/2, my);
-      mctx.lineTo(mx, my + ts/2);
-      mctx.lineTo(mx - ts/2, my);
-      mctx.closePath();
-      mctx.fill();
+      getNeighbors(room).forEach(nb => {
+        const key = [Math.min(room.id, nb.id), Math.max(room.id, nb.id)].join('-');
+        if (done.has(key)) return;
+        done.add(key);
+
+        const y = R.ROOM_H + 20;
+        const a = new THREE.Vector3(room._wx, y, room._wz);
+        const b = new THREE.Vector3(nb._wx, y, nb._wz);
+
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([a, b]);
+        const lineMat = new THREE.LineDashedMaterial({ color: room.color, transparent: true, opacity: 0.25, dashSize: 6, gapSize: 8 });
+        const line = new THREE.Line(lineGeo, lineMat);
+        line.computeLineDistances();
+        scene.add(line);
+
+        const packetMat = new THREE.MeshBasicMaterial({ color: room.color });
+        const packet = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), packetMat);
+        scene.add(packet);
+
+        connections.push({ a, b, packet, roomId: room.id });
+      });
     });
+  })();
 
-    // Viewport rect
-    const tl = screenToWorld(0, 0);
-    const br = screenToWorld(W, H);
-    const { mx: tlx, my: tly } = toMM(tl.wx, tl.wy);
-    const { mx: brx, my: bry } = toMM(br.wx, br.wy);
-    mctx.strokeStyle = '#ffffff55';
-    mctx.lineWidth = 1;
-    mctx.strokeRect(tlx, tly, brx - tlx, bry - tly);
+  /* ── PARTICLES ───────────────────────────── */
+  const PALETTE = ['#00d4ff','#ff6b35','#00ff88','#8b5cf6','#ffd700','#ff69b4'];
+  const PARTICLE_COUNT = 140;
+  const particlePos = new Float32Array(PARTICLE_COUNT * 3);
+  const particleCol = new Float32Array(PARTICLE_COUNT * 3);
+  const particleVel = [];
+  const tmpColor = new THREE.Color();
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particlePos[i*3+0] = (Math.random() - 0.5) * 2200;
+    particlePos[i*3+1] = Math.random() * 380 + 20;
+    particlePos[i*3+2] = (Math.random() - 0.5) * 1400;
+    tmpColor.set(PALETTE[i % PALETTE.length]);
+    particleCol[i*3+0] = tmpColor.r; particleCol[i*3+1] = tmpColor.g; particleCol[i*3+2] = tmpColor.b;
+    particleVel.push({ x: (Math.random()-0.5)*0.6, y: (Math.random()-0.5)*0.15, z: (Math.random()-0.5)*0.4 });
   }
+  const particleGeo = new THREE.BufferGeometry();
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+  particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol, 3));
+  const particleMat = new THREE.PointsMaterial({
+    size: 6, map: R.createDotTexture(), transparent: true, depthWrite: false,
+    vertexColors: true, blending: THREE.AdditiveBlending, opacity: 0.65,
+  });
+  const particles = new THREE.Points(particleGeo, particleMat);
+  scene.add(particles);
 
-  /* ══════════════════════════════════════════
-     HIT TEST — which room is under cursor?
-  ══════════════════════════════════════════ */
-  function hitTestRooms(sx, sy) {
-    // Sort by draw order (back to front) and test in reverse
-    const sorted = [...ROOMS].sort((a,b) => (a.col + a.row) - (b.col + b.row));
-    for (let i = sorted.length - 1; i >= 0; i--) {
-      const room = sorted[i];
-      const s = worldToScreen(room._wx, room._wy);
-      const lx = (sx - s.sx) / CAM.scale;
-      const ly = (sy - s.sy) / CAM.scale;
-      // Point-in-diamond test
-      const hw = R.TILE_W / 2, hh = R.TILE_H / 2;
-      if (Math.abs(lx/hw) + Math.abs(ly/hh) < 1.05) return room;
+  function updateParticles() {
+    const pos = particleGeo.attributes.position.array;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      pos[i*3+0] += particleVel[i].x;
+      pos[i*3+1] += particleVel[i].y;
+      pos[i*3+2] += particleVel[i].z;
+      if (pos[i*3+0] > 1100) pos[i*3+0] = -1100;
+      if (pos[i*3+0] < -1100) pos[i*3+0] = 1100;
+      if (pos[i*3+1] > 420) pos[i*3+1] = 20;
+      if (pos[i*3+1] < 10) pos[i*3+1] = 400;
+      if (pos[i*3+2] > 700) pos[i*3+2] = -700;
+      if (pos[i*3+2] < -700) pos[i*3+2] = 700;
     }
-    return null;
+    particleGeo.attributes.position.needsUpdate = true;
   }
+
+  /* ── HOVER / SELECT / RAYCAST ────────────── */
+  let hoveredRoom = null;
+  let selectedRoom = null;
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2(-10, -10);
+
+  function pickRoom() {
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(roomMeshes, false);
+    return hits.length ? hits[0].object.userData.room : null;
+  }
+
+  function setHover(room) {
+    if (room === hoveredRoom) return;
+    if (hoveredRoom) hoveredRoom._label.classList.remove('hover');
+    hoveredRoom = room;
+    if (hoveredRoom) hoveredRoom._label.classList.add('hover');
+    canvas.style.cursor = hoveredRoom ? 'pointer' : 'grab';
+  }
+
+  /* ── ANIMATION TIME ──────────────────────── */
+  let t = 0;
 
   /* ══════════════════════════════════════════
      MAIN LOOP
   ══════════════════════════════════════════ */
   function frame() {
     t++;
-
-    // Smooth camera
     const ease = 0.1;
-    CAM.x     += (CAM.targetX     - CAM.x)     * ease;
-    CAM.y     += (CAM.targetY     - CAM.y)     * ease;
-    CAM.scale += (CAM.targetScale - CAM.scale) * ease;
+    CAM.target.x += (CAM.tTarget.x - CAM.target.x) * ease;
+    CAM.target.z += (CAM.tTarget.z - CAM.target.z) * ease;
+    CAM.azimuth  += (CAM.tAzimuth  - CAM.azimuth ) * ease;
+    CAM.polar    += (CAM.tPolar    - CAM.polar   ) * ease;
+    CAM.dist     += (CAM.tDist     - CAM.dist    ) * ease;
+    updateCameraPosition();
 
-    ctx.clearRect(0, 0, W, H);
-    drawBackground();
+    updateParticles();
 
-    // Sort rooms by isometric depth (painter's algorithm)
-    const sorted = [...ROOMS].sort((a,b) => (a.col + a.row) - (b.col + b.row));
+    connections.forEach(c => {
+      const prog = ((t * 0.008 + c.roomId * 0.13) % 1);
+      c.packet.position.lerpVectors(c.a, c.b, prog);
+    });
 
-    drawConnections();
-    updateAndDrawParticles();
-    sorted.forEach(drawRoom);
+    animatedChars.forEach(c => R.updateCharacter(c.group, t, c.idx, c.anim));
+    animatedProps.forEach(p => {
+      if (p.type === 'monitor') R.updateMonitor(p.group, t);
+      if (p.type === 'rack') R.updateServerRack(p.group, t, p.x);
+    });
 
+    // Hover highlight scale
+    roomMeshes.forEach(m => {
+      const room = m.userData.room;
+      const isSel = room === selectedRoom, isHov = room === hoveredRoom;
+      const targetY = (isSel || isHov) ? 8 : 0;
+      m.position.y += (targetY - m.position.y) * 0.2;
+    });
+
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
     drawMinimap();
+    updateHUD();
+
     requestAnimationFrame(frame);
+  }
+
+  /* ══════════════════════════════════════════
+     MINIMAP (top-down, X/Z already flat)
+  ══════════════════════════════════════════ */
+  const mmCanvas = document.getElementById('minimap');
+  const mctx = mmCanvas.getContext('2d');
+
+  function drawMinimap() {
+    const mw = mmCanvas.width, mh = mmCanvas.height;
+    mctx.fillStyle = '#03080f';
+    mctx.fillRect(0, 0, mw, mh);
+
+    const xs = ROOMS.map(r => r._wx), zs = ROOMS.map(r => r._wz);
+    const minX = Math.min(...xs) - 140, maxX = Math.max(...xs) + 140;
+    const minZ = Math.min(...zs) - 80,  maxZ = Math.max(...zs) + 80;
+    const ww = maxX - minX, wh = maxZ - minZ;
+    function toMM(wx, wz) { return { mx: ((wx - minX) / ww) * mw, my: ((wz - minZ) / wh) * mh }; }
+
+    ROOMS.forEach(room => {
+      const { mx, my } = toMM(room._wx, room._wz);
+      mctx.fillStyle = room.color + (room === hoveredRoom ? 'ff' : '66');
+      const ts = 6;
+      mctx.beginPath();
+      mctx.moveTo(mx, my - ts/2); mctx.lineTo(mx + ts/2, my);
+      mctx.lineTo(mx, my + ts/2); mctx.lineTo(mx - ts/2, my);
+      mctx.closePath(); mctx.fill();
+    });
+
+    // Camera target + facing wedge
+    const { mx, my } = toMM(CAM.target.x, CAM.target.z);
+    mctx.strokeStyle = '#ffffffaa'; mctx.lineWidth = 1.2;
+    mctx.beginPath(); mctx.arc(mx, my, 5, 0, Math.PI*2); mctx.stroke();
+    const dirX = mx + Math.sin(CAM.azimuth) * 12;
+    const dirY = my + Math.cos(CAM.azimuth) * 12;
+    mctx.beginPath(); mctx.moveTo(mx, my); mctx.lineTo(dirX, dirY); mctx.stroke();
+  }
+
+  /* ══════════════════════════════════════════
+     HUD
+  ══════════════════════════════════════════ */
+  function updateHUD() {
+    document.getElementById('coordsEl').textContent = `${Math.round(CAM.target.x)} , ${Math.round(CAM.target.z)}`;
+    document.getElementById('zoomEl').textContent = `زوم: ${(950 / CAM.dist).toFixed(2)}×`;
   }
 
   /* ══════════════════════════════════════════
      INTERACTION
   ══════════════════════════════════════════ */
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-  // Drag
-  let dragging = false, lastMX = 0, lastMY = 0, didDrag = false;
+  let dragging = false, dragButton = 0, lastMX = 0, lastMY = 0, didDrag = false;
+
+  function panBy(dx, dy) {
+    const panSpeed = CAM.dist * 0.0016;
+    const fx = Math.sin(CAM.azimuth), fz = Math.cos(CAM.azimuth); // forward (ground)
+    const rx = Math.cos(CAM.azimuth), rz = -Math.sin(CAM.azimuth); // right (ground)
+    CAM.tTarget.x -= (rx * dx + fx * -dy) * panSpeed;
+    CAM.tTarget.z -= (rz * dx + fz * -dy) * panSpeed;
+  }
+  function orbitBy(dx, dy) {
+    CAM.tAzimuth -= dx * 0.006;
+    CAM.tPolar = Math.max(POLAR_MIN, Math.min(POLAR_MAX, CAM.tPolar - dy * 0.005));
+  }
 
   canvas.addEventListener('mousedown', e => {
-    dragging = true; didDrag = false;
+    dragging = true; didDrag = false; dragButton = e.button;
     lastMX = e.clientX; lastMY = e.clientY;
   });
   window.addEventListener('mouseup', e => {
     if (!didDrag) {
-      // Click
-      const hit = hitTestRooms(e.clientX, e.clientY);
-      if (hit) openRoom(hit);
-      else closePanel();
+      const hit = pickRoom();
+      if (hit) openRoom(hit); else closePanel();
     }
     dragging = false;
   });
   window.addEventListener('mousemove', e => {
+    ndc.x = (e.clientX / W) * 2 - 1;
+    ndc.y = -(e.clientY / H) * 2 + 1;
+
     if (dragging) {
       const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
       if (Math.abs(dx) + Math.abs(dy) > 3) didDrag = true;
-      CAM.targetX -= dx / CAM.scale;
-      CAM.targetY -= dy / CAM.scale;
+      if (dragButton === 2) panBy(dx, dy); else orbitBy(dx, dy);
       lastMX = e.clientX; lastMY = e.clientY;
     }
-    // Hover
-    const hit = hitTestRooms(e.clientX, e.clientY);
-    if (hit !== hoveredRoom) {
-      hoveredRoom = hit;
-      canvas.style.cursor = hit ? 'pointer' : 'grab';
-    }
-    // Tooltip
+
+    const hit = pickRoom();
+    setHover(hit);
+
     const tip = document.getElementById('tooltip');
     if (hit && hit !== selectedRoom) {
       tip.style.display = 'block';
@@ -464,76 +399,76 @@
     } else {
       tip.style.display = 'none';
     }
-    // HUD
-    const { wx, wy } = screenToWorld(e.clientX, e.clientY);
-    document.getElementById('coordsEl').textContent = `${Math.round(wx)} , ${Math.round(wy)}`;
-    document.getElementById('zoomEl').textContent   = `زوم: ${CAM.scale.toFixed(2)}×`;
   });
 
-  // Scroll to zoom
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    const { wx, wy } = screenToWorld(e.clientX, e.clientY);
-    CAM.targetScale = Math.min(2.5, Math.max(0.25, CAM.targetScale * factor));
-    CAM.targetX = wx - (e.clientX - W/2) / CAM.targetScale;
-    CAM.targetY = wy - (e.clientY - H/2) / CAM.targetScale;
+    const factor = e.deltaY < 0 ? 0.9 : 1.1;
+    CAM.tDist = Math.min(DIST_MAX, Math.max(DIST_MIN, CAM.tDist * factor));
   }, { passive: false });
 
-  // Touch
-  let lastTouchDist = null, lastTouchX = 0, lastTouchY = 0;
+  // Touch: one-finger orbit, two-finger pan/pinch-zoom
+  let lastTouchDist = null, lastTouchMidX = 0, lastTouchMidY = 0, lastTouchX = 0, lastTouchY = 0;
   canvas.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
       dragging = true; didDrag = false;
-      lastTouchX = e.touches[0].clientX;
-      lastTouchY = e.touches[0].clientY;
+      lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+    } else if (e.touches.length === 2) {
+      dragging = false;
+      lastTouchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      lastTouchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
   }, { passive: true });
   canvas.addEventListener('touchend', e => {
     if (!didDrag && e.changedTouches.length === 1) {
       const t2 = e.changedTouches[0];
-      const hit = hitTestRooms(t2.clientX, t2.clientY);
+      ndc.x = (t2.clientX / W) * 2 - 1;
+      ndc.y = -(t2.clientY / H) * 2 + 1;
+      const hit = pickRoom();
       if (hit) openRoom(hit); else closePanel();
     }
     dragging = false; lastTouchDist = null;
   }, { passive: true });
   canvas.addEventListener('touchmove', e => {
     if (e.touches.length === 1 && dragging) {
-      const dx = e.touches[0].clientX - lastTouchX;
-      const dy = e.touches[0].clientY - lastTouchY;
-      if (Math.abs(dx)+Math.abs(dy) > 3) didDrag = true;
-      CAM.targetX -= dx / CAM.scale;
-      CAM.targetY -= dy / CAM.scale;
-      lastTouchX = e.touches[0].clientX;
-      lastTouchY = e.touches[0].clientY;
+      const dx = e.touches[0].clientX - lastTouchX, dy = e.touches[0].clientY - lastTouchY;
+      if (Math.abs(dx) + Math.abs(dy) > 3) didDrag = true;
+      orbitBy(dx, dy);
+      lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
     } else if (e.touches.length === 2) {
       const d = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      if (lastTouchDist) {
-        CAM.targetScale = Math.min(2.5, Math.max(0.25, CAM.targetScale * (d / lastTouchDist)));
-      }
+      if (lastTouchDist) CAM.tDist = Math.min(DIST_MAX, Math.max(DIST_MIN, CAM.tDist * (lastTouchDist / d)));
       lastTouchDist = d;
+
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      panBy(mx - lastTouchMidX, my - lastTouchMidY);
+      lastTouchMidX = mx; lastTouchMidY = my;
     }
   }, { passive: true });
 
-  // Keyboard
   window.addEventListener('keydown', e => {
-    const spd = 40 / CAM.scale;
-    if (e.key === 'ArrowLeft'  || e.key === 'a') CAM.targetX -= spd;
-    if (e.key === 'ArrowRight' || e.key === 'd') CAM.targetX += spd;
-    if (e.key === 'ArrowUp'    || e.key === 'w') CAM.targetY -= spd;
-    if (e.key === 'ArrowDown'  || e.key === 's') CAM.targetY += spd;
-    if (e.key === '+' || e.key === '=') CAM.targetScale = Math.min(2.5, CAM.targetScale * 1.15);
-    if (e.key === '-')                  CAM.targetScale = Math.max(0.25, CAM.targetScale * 0.87);
-    if (e.key === 'r' || e.key === 'R') { centerCamera(); }
+    const spd = 40;
+    if (e.key === 'ArrowLeft'  || e.key === 'a') CAM.tTarget.x -= spd;
+    if (e.key === 'ArrowRight' || e.key === 'd') CAM.tTarget.x += spd;
+    if (e.key === 'ArrowUp'    || e.key === 'w') CAM.tTarget.z -= spd;
+    if (e.key === 'ArrowDown'  || e.key === 's') CAM.tTarget.z += spd;
+    if (e.key === 'q' || e.key === 'Q') CAM.tAzimuth -= 0.12;
+    if (e.key === 'e' || e.key === 'E') CAM.tAzimuth += 0.12;
+    if (e.key === '+' || e.key === '=') CAM.tDist = Math.max(DIST_MIN, CAM.tDist * 0.87);
+    if (e.key === '-')                  CAM.tDist = Math.min(DIST_MAX, CAM.tDist * 1.15);
+    if (e.key === 'r' || e.key === 'R') resetCamera();
     if (e.key === 'Escape') closePanel();
   });
 
   /* ── ROOM PANEL ──────────────────────────── */
   function openRoom(room) {
+    if (selectedRoom) selectedRoom._label.classList.remove('selected');
     selectedRoom = room;
+    room._label.classList.add('selected');
     document.getElementById('ipIcon').textContent    = room.icon;
     document.getElementById('ipName').textContent    = room.name;
     document.getElementById('ipService').textContent = room.service;
@@ -541,11 +476,12 @@
     document.getElementById('ipLink').href           = room.link;
     document.getElementById('infoPanel').classList.add('open');
     document.getElementById('roomLabel').textContent  = room.name;
-    // Fly to room
-    CAM.targetX = room._wx;
-    CAM.targetY = room._wy - 60;
+    CAM.tTarget.x = room._wx;
+    CAM.tTarget.z = room._wz;
+    CAM.tDist = 620;
   }
   function closePanel() {
+    if (selectedRoom) selectedRoom._label.classList.remove('selected');
     selectedRoom = null;
     document.getElementById('infoPanel').classList.remove('open');
     document.getElementById('roomLabel').textContent = 'خوش آمدید به پازل‌نت ورس';
@@ -553,13 +489,13 @@
   document.getElementById('infoPanelClose').addEventListener('click', closePanel);
 
   /* ── BOOT SEQUENCE ───────────────────────── */
-  const bootEl  = document.getElementById('boot');
-  const barEl   = document.getElementById('bootBar');
-  const statEl  = document.getElementById('bootStatus');
+  const bootEl = document.getElementById('boot');
+  const barEl  = document.getElementById('bootBar');
+  const statEl = document.getElementById('bootStatus');
   const steps = [
     'اتصال به سرور پازل‌نت...',
     'بارگذاری نقشه دنیا...',
-    'رسم قطعات پازل...',
+    'ساخت مدل‌های سه‌بعدی...',
     'فعال‌سازی شخصیت‌ها...',
     'آماده است!',
   ];
@@ -579,16 +515,10 @@
   }, 380);
 
   /* ── KICK OFF ────────────────────────────── */
-  centerCamera();
+  window.addEventListener('resize', resize);
+  resize();
+  resetCamera();
+  updateCameraPosition();
   frame();
-
-  /* ── UTILITY ─────────────────────────────── */
-  window.shadeColor = function(hex, pct) {
-    const n = parseInt(hex.slice(1), 16);
-    const r = Math.max(0, Math.min(255, ((n>>16)&0xff) + pct));
-    const g = Math.max(0, Math.min(255, ((n>> 8)&0xff) + pct));
-    const b = Math.max(0, Math.min(255,  (n     &0xff) + pct));
-    return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
-  };
 
 })();
